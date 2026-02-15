@@ -121,10 +121,17 @@ func (o *Relation) Own() {
 	o.Tags = o.Tags.Clone()
 }
 
+type blobContent struct {
+	nodes, ways, relations bool
+}
+
 type Parser struct {
 	r       io.ReadSeeker
 	Workers int
 	pos     int64
+
+	mu           sync.Mutex
+	blobContents map[int]blobContent
 
 	blobPool sync.Pool
 	zlibPool sync.Pool
@@ -135,6 +142,8 @@ func NewParser(r io.ReadSeeker) *Parser {
 	return &Parser{
 		r:       r,
 		Workers: runtime.GOMAXPROCS(0),
+
+		blobContents: map[int]blobContent{},
 
 		blobPool: sync.Pool{
 			New: func() any {
@@ -294,6 +303,7 @@ type Blob struct {
 	Data    []byte
 	RawSize int
 
+	index    int
 	datasize int64
 }
 
@@ -1131,6 +1141,7 @@ func (z *Parser) Parse(ctx context.Context, nodeFunc NodeFunc, wayFunc WayFunc, 
 	} else if _, err := z.r.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
+	z.pos = 0
 
 	ctx2, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -1156,6 +1167,15 @@ func (z *Parser) Parse(ctx context.Context, nodeFunc NodeFunc, wayFunc WayFunc, 
 					}
 					return
 				} else if err := func() error {
+					// skip blob if not relevant
+					z.mu.Lock()
+					content, hasContent := z.blobContents[blob.index]
+					if hasContent && !(nodeFunc != nil && content.nodes || wayFunc != nil && content.ways || relationFunc != nil && content.relations) {
+						z.mu.Unlock()
+						return nil
+					}
+					z.mu.Unlock()
+
 					block, buf, err := z.block(blob)
 					if err != nil {
 						return err
@@ -1174,6 +1194,7 @@ func (z *Parser) Parse(ctx context.Context, nodeFunc NodeFunc, wayFunc WayFunc, 
 									return err
 								}
 							}
+							content.nodes = true
 						} else if field == 3 {
 							// Way
 							if wayFunc != nil {
@@ -1181,6 +1202,7 @@ func (z *Parser) Parse(ctx context.Context, nodeFunc NodeFunc, wayFunc WayFunc, 
 									return err
 								}
 							}
+							content.ways = true
 						} else if field == 4 {
 							// Relation
 							if relationFunc != nil {
@@ -1188,11 +1210,18 @@ func (z *Parser) Parse(ctx context.Context, nodeFunc NodeFunc, wayFunc WayFunc, 
 									return err
 								}
 							}
+							content.relations = true
 						} else if field == 5 {
 							// ChangeSet: noop
 						}
 					}
 					z.blobPool.Put(buf)
+
+					if !hasContent {
+						z.mu.Lock()
+						z.blobContents[blob.index] = content
+						z.mu.Unlock()
+					}
 					return nil
 				}(); err != nil {
 					muErr.Lock()
@@ -1207,6 +1236,7 @@ func (z *Parser) Parse(ctx context.Context, nodeFunc NodeFunc, wayFunc WayFunc, 
 	}
 
 	// find Blobs
+	index := 0
 	bufHeader := make([]byte, maxBlobHeaderSize)
 BlobLoop:
 	for {
@@ -1227,6 +1257,7 @@ BlobLoop:
 			cancel()
 			break
 		} else if blob.Data != nil {
+			blob.index = index
 			select {
 			case <-ctx2.Done():
 				if ctx.Err() != nil {
@@ -1239,6 +1270,7 @@ BlobLoop:
 				// noop
 			}
 		}
+		index++
 	}
 	close(blobs)
 

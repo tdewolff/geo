@@ -60,3 +60,124 @@ Performance measurements on my ThinkPad T460 (Intel Core i5-6300U, dual-core, fo
 | [thomersch/gosmparse](https://github.com/thomersch/gosmparse) | 1.46±0.04 | 1706.43±0.00 | 
 
 Skip objects refers to skipping all nodes, ways, and relations which is indicative for the performance gain of parsing specific object types while ignoring others. The thomersch/gosmparse library does not have this feature. Note that paulmach/osm uses a slighly faster zlib decompressor that requires CGO, resulting in a faster parsing when skipping all objects.
+
+## Statistics
+Gather various OSM statistics.
+```go
+r, err := os.Open("groningen.osm.pbf")
+if err != nil {
+    panic(err)
+}
+
+ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+defer stop()
+
+stats, err := osm.NewParser(r).Stats(ctx)
+if err != nil {
+    panic(err)
+}
+fmt.Println(stats)
+```
+
+Output:
+```
+Nodes:        num=5588975  id=[150862,13525140901]
+  parents:    relation=2629 (0.0%)  way=5206109 (93.1%)  both=2933 (0.1%)  none=377304 (6.8%)
+
+Ways:         num=709253  id=[4424482,1474261027]
+  parents:    relation=43683 (6.2%)  none=665570 (93.8%)
+  nodes:      num=5209042  mean=10±14  q(.5,.75,.9,.99)=[6 11 19 65]  missing=0
+
+Relations:    num=9073  id=[1883,20124374]
+  parents:    relation=3799 (41.9%)  none=5274 (58.1%)
+  depths:     0=5274  1=3407  2=134  3=258
+
+  nodes:      num=14330  mean=1±21  q(.5,.75,.9,.99)=[0 0 1 44]  missing=8768
+  ways:       num=80187  mean=18±106  q(.5,.75,.9,.99)=[3 6 17 249]  missing=36504
+  relations:  num=16981  mean=0±32  q(.5,.75,.9,.99)=[0 0 0 3]  missing=13182
+Bounds:       lon=[0.06715,8.573573300000001]  lat=[51.2541943,58.2701214]
+```
+
+## Extract and render
+Extract water, grass and forest features and render.
+```go
+r, err := os.Open("groningen.osm.pbf")
+if err != nil {
+    panic(err)
+}
+
+ctx0, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+defer stop()
+
+bounds := osm.Bounds{
+	{6.5651050153515484, 53.16260493850089},
+	{6.574056630521028, 53.1677857404529},
+}
+
+filter := func(typ osm.Type, id uint64, tags osm.Tags) osm.Class {
+    if tags.Find("natural") == "water" {
+        return Water
+    } else if tags.Find("landuse") == "grass" {
+        return Grass
+    } else if tags.Find("landuse") == "forest" {
+        return Forest
+    }
+    return 0
+}
+
+geometries, err := osm.NewParser(r).Extract(ctx0, bounds, filter)
+if err != nil {
+    panic(err)
+}
+
+// use transverse mercator projection
+proj := geo.TransverseMercatorLambert(bounds.Centre().X, 0.9996)
+projBounds := bounds.Project(proj.Forward)
+
+// find image width and height
+width := 900.0
+f := width / projBounds.W()
+height := f * projBounds.H()
+
+// projector for coordinates
+projector := func(lon float64, lat float64) (float64, float64) {
+    x, y := proj.Forward(lon, lat)
+    return f * (x - projBounds[0].X), f * (y - projBounds[0].Y)
+}
+
+c := canvas.New(width, height)
+ctx := canvas.NewContext(c)
+ctx.SetStrokeWidth(0.5)
+
+// range over classes one by one, add stroke to avoid black borders
+classes := []osm.Class{Water, Grass, Forest}
+for _, class := range classes {
+    if geoms := geometries[class]; 0 < len(geoms) {
+        switch class {
+        case Water:
+            ctx.SetFillColor(canvas.Aqua)
+            ctx.SetStrokeColor(canvas.Aqua)
+            for _, geom := range geoms {
+                ctx.DrawPath(0.0, 0.0, polygonPath(geom.Polygons, projector))
+            }
+        case Grass:
+            ctx.SetFillColor(canvas.Lawngreen)
+            ctx.SetStrokeColor(canvas.Lawngreen)
+            for _, geom := range geoms {
+                ctx.DrawPath(0.0, 0.0, polygonPath(geom.Polygons, projector))
+            }
+        case Forest:
+            ctx.SetFillColor(canvas.Forestgreen)
+            ctx.SetStrokeColor(canvas.Forestgreen)
+            for _, geom := range geoms {
+                ctx.DrawPath(0.0, 0.0, polygonPath(geom.Polygons, projector))
+            }
+        }
+    }
+}
+
+// render image
+if err := renderers.Write("groningen.png", c, canvas.Resolution(1.0)); err != nil {
+    panic(err)
+}
+```
