@@ -55,11 +55,13 @@ Performance measurements on my ThinkPad T460 (Intel Core i5-6300U, dual-core, fo
 | ------- | -------- | ---------------- |
 | **tdewolff/geo/osm** | 0.56±0.01 | 48.95±3.00 |
 | **tdewolff/geo/osm** (skip objects) | 0.37±0.01 | 32.09±1.31 |
+| **tdewolff/geo/osm** (CGO) | 0.47±0.05 | 74.44±2.33 |
+| **tdewolff/geo/osm** (CGO, skip objects) | 0.27±0.04 | 57.79±1.52 |
 | [paulmach/osm](https://github.com/paulmach/osm) (CGO) | 1.22±0.04 | 1754.71±0.02 |
 | [paulmach/osm](https://github.com/paulmach/osm) (CGO, skip objects) | 0.34±0.01 | 280.45±0.00 |
 | [thomersch/gosmparse](https://github.com/thomersch/gosmparse) | 1.46±0.04 | 1706.43±0.00 | 
 
-Skip objects refers to skipping all nodes, ways, and relations which is indicative for the performance gain of parsing specific object types while ignoring others. The thomersch/gosmparse library does not have this feature. Note that paulmach/osm uses a slighly faster zlib decompressor that requires CGO, resulting in a faster parsing when skipping all objects.
+Skip objects refers to skipping all nodes, ways, and relations which is indicative for the performance gain of parsing specific object types while ignoring others. The thomersch/gosmparse library does not have this feature.
 
 ## Statistics
 Gather various OSM statistics.
@@ -182,4 +184,4 @@ if err := renderers.Write("groningen.png", c, canvas.Resolution(1.0)); err != ni
 }
 ```
 
-![Paterswoldsemeer, Groningen](https://github.com/tdewolff/geo/blob/master/test/groningen.png)
+![Paterswoldsemeer, Groningen](https://github.com/tdewolff/geo/blob/master/examples/groningen/out.png)

@@ -14,8 +14,6 @@ import (
 	"sync"
 	"sync/atomic"
 	unsafe "unsafe"
-
-	"github.com/klauspost/compress/zlib"
 )
 
 const maxBlobHeaderSize = 64 * 1024
@@ -459,6 +457,10 @@ type Block struct {
 	LonOffset       int64
 }
 
+type ZlibResetter interface {
+	Reset(io.Reader, []byte) error
+}
+
 func (z *Parser) block(blob Blob) (Block, []byte, error) {
 	var buf []byte
 	switch blob.Type {
@@ -469,10 +471,10 @@ func (z *Parser) block(blob Blob) (Block, []byte, error) {
 		var r io.ReadCloser
 		var err error
 		if item := z.zlibPool.Get(); item == nil {
-			r, err = zlib.NewReader(bytes.NewReader(blob.Data))
+			r, err = newZlibReader(bytes.NewReader(blob.Data))
 		} else {
 			r = item.(io.ReadCloser)
-			err = r.(zlib.Resetter).Reset(bytes.NewReader(blob.Data), nil)
+			err = item.(ZlibResetter).Reset(bytes.NewReader(blob.Data), nil)
 		}
 		if err != nil {
 			return Block{}, nil, fmt.Errorf("invalid zlib compression in Blob: %w", err)
@@ -495,7 +497,9 @@ func (z *Parser) block(blob Blob) (Block, []byte, error) {
 			return Block{}, nil, fmt.Errorf("invalid zlib compression in Blob: %w", err)
 		}
 		z.blobPool.Put(blob.Data)
-		z.zlibPool.Put(r)
+		if _, ok := r.(ZlibResetter); ok {
+			z.zlibPool.Put(r)
+		}
 	case 4:
 		// LZMA
 		// TODO

@@ -7,6 +7,8 @@ replace github.com/tdewolff/navalsec => ../navalsec
 replace github.com/tdewolff/navalsec/mapping => ../navalsec/mapping
 
 require (
+	github.com/4kills/go-zlib v1.2.0
+	github.com/DataDog/czlib v0.0.0-20240814115052-86a9592b3985
 	github.com/jonas-p/go-shp v0.1.1
 	github.com/klauspost/compress v1.16.7
 	github.com/paulmach/orb v0.12.0
@@ -26,7 +28,6 @@ require (
 	github.com/BurntSushi/xgb v0.0.0-20210121224620-deaf085860bc // indirect
 	github.com/BurntSushi/xgbutil v0.0.0-20190907113008-ad855c713046 // indirect
 	github.com/ByteArena/poly2tri-go v0.0.0-20170716161910-d102ad91854f // indirect
-	github.com/DataDog/czlib v0.0.0-20240814115052-86a9592b3985 // indirect
 	github.com/Kagami/go-avif v0.1.0 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/benoitkugler/textlayout v0.3.1 // indirect

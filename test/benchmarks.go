@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"runtime/pprof"
 	"time"
 
 	"github.com/paulmach/osm/osmpbf"
@@ -52,7 +53,27 @@ func printStats(name string, ts []time.Duration, ms []uint64) {
 }
 
 func main() {
-	f, err := os.Open("groningen.osm.pbf")
+	prof, err := os.Create("cpu")
+	if err != nil {
+		panic(err)
+	}
+	defer prof.Close()
+	if err := pprof.StartCPUProfile(prof); err != nil {
+		panic(err)
+	}
+	defer pprof.StopCPUProfile()
+
+	defer func() {
+		f, err := os.Create("mem")
+		if err != nil {
+			panic(err)
+		}
+		defer f.Close() // error handling omitted for example
+		runtime.GC()    // get up-to-date statistics
+		pprof.WriteHeapProfile(f)
+	}()
+
+	f, err := os.Open("groningen/groningen.osm.pbf")
 	if err != nil {
 		panic(err)
 	}
@@ -102,7 +123,7 @@ func main() {
 		runtime.ReadMemStats(&memStats)
 		ms[n] = memStats.TotalAlloc - m
 	}
-	printStats("paulmach2", ts, ms)
+	printStats("paulmach (skipping)", ts, ms)
 
 	for n := 0; n < N; n++ {
 		if _, err := f.Seek(0, io.SeekStart); err != nil {
@@ -123,12 +144,9 @@ func main() {
 	printStats("thomersch", ts, ms)
 
 	ctx := context.Background()
-	nodeFunc := func(node osm.Node) {
-	}
-	wayFunc := func(way osm.Way) {
-	}
-	relationFunc := func(relation osm.Relation) {
-	}
+	nodeFunc := func(node osm.Node) {}
+	wayFunc := func(way osm.Way) {}
+	relationFunc := func(relation osm.Relation) {}
 
 	for n := 0; n < N; n++ {
 		runtime.ReadMemStats(&memStats)
@@ -156,5 +174,5 @@ func main() {
 		runtime.ReadMemStats(&memStats)
 		ms[n] = memStats.TotalAlloc - m
 	}
-	printStats("tdewolff2", ts, ms)
+	printStats("tdewolff (skipping)", ts, ms)
 }
