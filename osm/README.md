@@ -31,8 +31,8 @@ func main() {
         // process relation:
 	    // relation.ID      uint64
 	    // relation.Members []struct{
-        //     ID   uint64
         //     Type osm.ObjectType // osm.NodeType, osm.WayType, or osm.RelationType
+        //     ID   uint64
         //     Role string
         // }
 	    // relation.Tags    osm.Tags
@@ -53,12 +53,12 @@ Performance measurements on my ThinkPad T460 (Intel Core i5-6300U, dual-core, fo
 
 | Library | Time (s) | Allocations (MB) |
 | ------- | -------- | ---------------- |
-| **tdewolff/geo/osm** | 0.56±0.01 | 48.95±3.00 |
+| **tdewolff/geo/osm** (CGO, skip objects) | 0.27±0.04 | 57.79±1.52 |
+| [paulmach/osm](https://github.com/paulmach/osm) (CGO, skip objects) | 0.34±0.01 | 280.45±0.00 |
 | **tdewolff/geo/osm** (skip objects) | 0.37±0.01 | 32.09±1.31 |
 | **tdewolff/geo/osm** (CGO) | 0.47±0.05 | 74.44±2.33 |
-| **tdewolff/geo/osm** (CGO, skip objects) | 0.27±0.04 | 57.79±1.52 |
+| **tdewolff/geo/osm** | 0.56±0.01 | 48.95±3.00 |
 | [paulmach/osm](https://github.com/paulmach/osm) (CGO) | 1.22±0.04 | 1754.71±0.02 |
-| [paulmach/osm](https://github.com/paulmach/osm) (CGO, skip objects) | 0.34±0.01 | 280.45±0.00 |
 | [thomersch/gosmparse](https://github.com/thomersch/gosmparse) | 1.46±0.04 | 1706.43±0.00 | 
 
 Skip objects refers to skipping all nodes, ways, and relations which is indicative for the performance gain of parsing specific object types while ignoring others. The thomersch/gosmparse library does not have this feature.
@@ -111,6 +111,7 @@ if err != nil {
 ctx0, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 defer stop()
 
+margin := 0.01 // relative to width or height
 bounds := osm.Bounds{
 	{6.5651050153515484, 53.16260493850089},
 	{6.574056630521028, 53.1677857404529},
@@ -123,14 +124,23 @@ filter := func(typ osm.Type, id uint64, tags osm.Tags) osm.Class {
         return Grass
     } else if tags.Find("landuse") == "forest" {
         return Forest
+    } else if tags.Find("landuse") == "residential" {
+        return Residential
+    } else if tags.Find("natural") == "wetland" {
+        return Wetland
+    } else if tags.Find("natural") == "beach" {
+        return Beach
+    } else if tags.Find("type") == "coastline" {
+        return Land
     }
     return 0
 }
 
-geometries, err := osm.NewParser(r).Extract(ctx0, bounds, filter)
+geometries, err := z.Extract(ctx0, bounds.ExpandByFactor(margin), filter)
 if err != nil {
     panic(err)
 }
+
 
 // use transverse mercator projection
 proj := geo.TransverseMercatorLambert(bounds.Centre().X, 0.9996)
@@ -149,31 +159,31 @@ projector := func(lon float64, lat float64) (float64, float64) {
 
 c := canvas.New(width, height)
 ctx := canvas.NewContext(c)
-ctx.SetStrokeWidth(0.5)
+ctx.SetStrokeWidth(1.0) // avoid black borders
 
 // range over classes one by one, add stroke to avoid black borders
-classes := []osm.Class{Water, Grass, Forest}
+colors := map[osm.Class]color.RGBA{
+    Land:        canvas.Hex("fbeedb"),
+    Water:       canvas.Hex("30aee1"),
+    Wetland:     canvas.Hex("7fbd9b"),
+    Grass:       canvas.Hex("4d8a44"),
+    Forest:      canvas.Hex("256316"),
+    Beach:       canvas.Hex("e1ea8d"),
+    Residential: canvas.Hex("d0d0d0"),
+}
+
+ctx.SetFillColor(colors[Land])
+ctx.SetStrokeColor(canvas.Transparent)
+ctx.DrawPath(0.0, 0.0, boundsPath(Bounds.ExpandByFactor(margin), projector))
+
+classes := []osm.Class{Water, Residential, Wetland, Forest, Grass, Beach}
 for _, class := range classes {
+    color := colors[class]
+    ctx.SetFillColor(color)
+    ctx.SetStrokeColor(color)
     if geoms := geometries[class]; 0 < len(geoms) {
-        switch class {
-        case Water:
-            ctx.SetFillColor(canvas.Aqua)
-            ctx.SetStrokeColor(canvas.Aqua)
-            for _, geom := range geoms {
-                ctx.DrawPath(0.0, 0.0, polygonPath(geom.Polygons, projector))
-            }
-        case Grass:
-            ctx.SetFillColor(canvas.Lawngreen)
-            ctx.SetStrokeColor(canvas.Lawngreen)
-            for _, geom := range geoms {
-                ctx.DrawPath(0.0, 0.0, polygonPath(geom.Polygons, projector))
-            }
-        case Forest:
-            ctx.SetFillColor(canvas.Forestgreen)
-            ctx.SetStrokeColor(canvas.Forestgreen)
-            for _, geom := range geoms {
-                ctx.DrawPath(0.0, 0.0, polygonPath(geom.Polygons, projector))
-            }
+        for _, geom := range geoms {
+            ctx.DrawPath(0.0, 0.0, polygonPath(geom.Polygons, projector))
         }
     }
 }

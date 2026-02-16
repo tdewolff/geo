@@ -19,9 +19,13 @@ import (
 
 const (
 	Unknown osm.Class = iota + 1
+	Land
 	Water
+	Wetland
 	Grass
 	Forest
+	Residential
+	Beach
 )
 
 var Bounds = osm.Bounds{
@@ -44,21 +48,19 @@ func progress(ctx context.Context, z *osm.Parser, total int64) {
 	}
 }
 
-//func polygonPath(o osm.Polygon, projector geo.Projector) *canvas.Path {
-//	p := &canvas.Path{}
-//	for _, coords := range o.Coords {
-//		if 1 < len(coords) {
-//			x, y := projector(coords[0].X, coords[0].Y)
-//			p.MoveTo(x, y)
-//			for _, coord := range coords[1:] {
-//				x, y := projector(coord.X, coord.Y)
-//				p.LineTo(x, y)
-//			}
-//			p.Close()
-//		}
-//	}
-//	return p
-//}
+func boundsPath(bounds osm.Bounds, projector geo.Projector) *canvas.Path {
+	p := &canvas.Path{}
+	x, y := projector(bounds[0].X, bounds[0].Y)
+	p.MoveTo(x, y)
+	x, y = projector(bounds[1].X, bounds[0].Y)
+	p.LineTo(x, y)
+	x, y = projector(bounds[1].X, bounds[1].Y)
+	p.LineTo(x, y)
+	x, y = projector(bounds[0].X, bounds[1].Y)
+	p.LineTo(x, y)
+	p.Close()
+	return p
+}
 
 func polygonPath(polygons []osm.Polygon, projector geo.Projector) *canvas.Path {
 	p := &canvas.Path{}
@@ -101,7 +103,7 @@ func main() {
 		pprof.WriteHeapProfile(f)
 	}()
 
-	r, err := os.Open("groningen.osm.pbf")
+	r, err := os.Open("paterswoldsemeer.osm.pbf")
 	if err != nil {
 		panic(err)
 	}
@@ -112,15 +114,17 @@ func main() {
 	var t time.Time
 	z := osm.NewParser(r)
 
-	t = time.Now()
-	stats, err := z.Stats(ctx0)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(stats)
-	fmt.Println("Time:", time.Since(t))
+	//t = time.Now()
+	//stats, err := z.Stats(ctx0)
+	//if err != nil {
+	//	panic(err)
+	//}
+	//fmt.Println(stats)
+	//fmt.Println("Time:", time.Since(t))
 
 	t = time.Now()
+	Bounds = Bounds.ExpandByFactor(8.0)
+	margin := 0.01 // relative to width or height
 	filter := func(typ osm.Type, id uint64, tags osm.Tags) osm.Class {
 		if tags.Find("natural") == "water" {
 			return Water
@@ -128,12 +132,18 @@ func main() {
 			return Grass
 		} else if tags.Find("landuse") == "forest" {
 			return Forest
-			//} else {
-			//	return Unknown
+		} else if tags.Find("landuse") == "residential" {
+			return Residential
+		} else if tags.Find("natural") == "wetland" {
+			return Wetland
+		} else if tags.Find("natural") == "beach" {
+			return Beach
+		} else if tags.Find("type") == "coastline" {
+			return Land
 		}
 		return 0
 	}
-	geometries, err := z.Extract(ctx0, Bounds, filter)
+	geometries, err := z.Extract(ctx0, Bounds.ExpandByFactor(margin), filter)
 	if err != nil {
 		panic(err)
 	}
@@ -153,41 +163,39 @@ func main() {
 
 	c := canvas.New(width, height)
 	ctx := canvas.NewContext(c)
-	ctx.SetStrokeWidth(1.0)
+	ctx.SetStrokeWidth(1.0) // avoid black borders
 
-	classes := []osm.Class{Water, Grass, Forest}
+	colors := map[osm.Class]color.RGBA{
+		Land:        canvas.Hex("fbeedb"),
+		Water:       canvas.Hex("30aee1"),
+		Wetland:     canvas.Hex("7fbd9b"),
+		Grass:       canvas.Hex("4d8a44"),
+		Forest:      canvas.Hex("256316"),
+		Beach:       canvas.Hex("e1ea8d"),
+		Residential: canvas.Hex("d0d0d0"),
+	}
+
+	ctx.SetFillColor(colors[Land])
+	ctx.SetStrokeColor(canvas.Transparent)
+	ctx.DrawPath(0.0, 0.0, boundsPath(Bounds.ExpandByFactor(margin), projector))
+
+	classes := []osm.Class{Water, Residential, Wetland, Forest, Grass, Beach}
 	for _, class := range classes {
+		color := colors[class]
+		ctx.SetFillColor(color)
+		ctx.SetStrokeColor(color)
 		if geoms := geometries[class]; 0 < len(geoms) {
 			for _, geom := range geoms {
-				fmt.Println("=>", geom)
-			}
-			switch class {
-			case Water:
-				ctx.SetFillColor(canvas.Aqua)
-				ctx.SetStrokeColor(canvas.Aqua)
-				for _, geom := range geoms {
-					ctx.DrawPath(0.0, 0.0, polygonPath(geom.Polygons, projector))
-				}
-			case Grass:
-				ctx.SetFillColor(canvas.Lawngreen)
-				ctx.SetStrokeColor(canvas.Lawngreen)
-				for _, geom := range geoms {
-					ctx.DrawPath(0.0, 0.0, polygonPath(geom.Polygons, projector))
-				}
-			case Forest:
-				ctx.SetFillColor(canvas.Forestgreen)
-				ctx.SetStrokeColor(canvas.Forestgreen)
-				for _, geom := range geoms {
-					ctx.DrawPath(0.0, 0.0, polygonPath(geom.Polygons, projector))
-				}
-				//case Unknown:
-				//	ctx.SetFillColor(colorOpacity(canvas.Fuchsia, 0.1))
-				//	for _, geom := range geoms {
-				//		ctx.DrawPath(0.0, 0.0, polygonPath(geom.Polygons, projector))
-				//	}
+				ctx.DrawPath(0.0, 0.0, polygonPath(geom.Polygons, projector))
 			}
 		}
 	}
+
+	ctx.SetFillColor(canvas.Transparent)
+	ctx.SetStrokeColor(canvas.Red)
+	ctx.SetStrokeWidth(1.5)
+	ctx.SetDashes(0.0, canvas.Dashed...)
+	ctx.DrawPath(0.0, 0.0, boundsPath(Bounds, projector))
 
 	c.Fit(1.0)
 

@@ -99,8 +99,8 @@ const (
 )
 
 type Member struct {
-	ID   uint64
 	Type Type
+	ID   uint64
 	Role string
 }
 
@@ -1115,8 +1115,8 @@ func (z *Parser) relations(block Block, buffers *buffers, buf []byte, fn Relatio
 		buffers.members = buffers.members[:0]
 		for k := 0; k < len(buffers.roles); k++ {
 			buffers.members = append(buffers.members, Member{
-				ID:   buffers.refs[k],
 				Type: Type(buffers.types[k]),
+				ID:   buffers.refs[k],
 				Role: buffers.stringTable[buffers.roles[k]],
 			})
 		}

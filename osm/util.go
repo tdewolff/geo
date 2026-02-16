@@ -39,11 +39,16 @@ func (b Bounds) Contains(c Coord) bool {
 	return b[0].X <= c.X && c.X <= b[1].X && b[0].Y <= c.Y && c.Y <= b[1].Y
 }
 
-func (b Bounds) Expand(d float64) Bounds {
+func (b Bounds) Expand(dx, dy float64) Bounds {
 	return Bounds{
-		{b[0].X - d, b[0].Y - d},
-		{b[1].X + d, b[1].Y + d},
+		{b[0].X - dx, b[0].Y - dy},
+		{b[1].X + dx, b[1].Y + dy},
 	}
+}
+
+func (b Bounds) ExpandByFactor(f float64) Bounds {
+	f /= 2.0
+	return b.Expand(f*b.W(), f*b.H())
 }
 
 func (b Bounds) Project(proj func(float64, float64) (float64, float64)) Bounds {
