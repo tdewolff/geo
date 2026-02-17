@@ -172,7 +172,7 @@ func main() {
 		Grass:       canvas.Hex("4d8a44"),
 		Forest:      canvas.Hex("256316"),
 		Beach:       canvas.Hex("e1ea8d"),
-		Residential: canvas.Hex("d0d0d0"),
+		Residential: canvas.Hex("c0c0c0"),
 	}
 
 	ctx.SetFillColor(colors[Land])

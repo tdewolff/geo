@@ -73,7 +73,7 @@ func main() {
 		pprof.WriteHeapProfile(f)
 	}()
 
-	f, err := os.Open("groningen/groningen.osm.pbf")
+	f, err := os.Open("../examples/groningen/groningen.osm.pbf")
 	if err != nil {
 		panic(err)
 	}
